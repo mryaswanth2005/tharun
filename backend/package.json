@@ -1,0 +1,13 @@
+{
+  "name": "califnco-backend",
+  "version": "1.0.0",
+  "description": "Califnco Backend scripts, seeders, and cloud configurations",
+  "main": "scripts/seed_firestore.js",
+  "scripts": {
+    "seed": "node scripts/seed_firestore.js",
+    "export-csv": "node scripts/export_csv.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

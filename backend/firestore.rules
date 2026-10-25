@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'admin' || getUserData().role == 'admin');
+    }
+
+    function isDealer() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'dealer' || getUserData().role == 'dealer');
+    }
+
+    function isApprovedDealer() {
+      return isDealer() && getUserData().dealerStatus == 'approved';
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Allow user creation on signup; role can be customer or dealer (starts pending)
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Users can update their profile; role and dealerStatus updates restricted to admin
+      allow update: if isOwner(userId) && 
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'dealerStatus'])) ||
+        isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // PRODUCTS COLLECTION
+    match /products/{productId} {
+      // Anyone authenticated or public can read active products
+      allow read: if true;
+      // Only Admin can create, update, or delete products
+      allow create, update, delete: if isAdmin();
+    }
+
+    // CARTS COLLECTION
+    match /carts/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // ORDERS COLLECTION
+    match /orders/{orderId} {
+      // Users can read their own orders; admins can read all
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Authenticated users can create orders for themselves; dealers must be approved
+      allow create: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid &&
+        (!request.resource.data.isWholesale || isApprovedDealer());
+      // Only Admin can update status; customer can cancel if order is still 'placed'
+      allow update: if isAdmin() || (
+        isOwner(resource.data.userId) &&
+        request.resource.data.orderStatus == 'cancelled' &&
+        resource.data.orderStatus == 'placed'
+      );
+      allow delete: if isAdmin();
+    }
+
+    // DEALER APPLICATIONS COLLECTION
+    match /dealerApplications/{applicationId} {
+      // Applicant can read their application; Admin can read all
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Users can submit their application
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Only Admin can approve/reject applications
+      allow update, delete: if isAdmin();
+    }
+
+    // SERVICE BOOKINGS COLLECTION
+    match /serviceBookings/{bookingId} {
+      // Customer can read their service bookings; Admin can read all
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Authenticated users can create service bookings
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Admins can update status, assign technicians; users can cancel if pending
+      allow update: if isAdmin() || (
+        isOwner(resource.data.userId) &&
+        request.resource.data.status == 'cancelled' &&
+        resource.data.status == 'pending'
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ADDRESSES COLLECTION
+    match /addresses/{addressId} {
+      allow read, write: if isAuthenticated() && (
+        resource == null || resource.data.userId == request.auth.uid
+      ) && (
+        request.resource == null || request.resource.data.userId == request.auth.uid
+      ) || isAdmin();
+    }
+
+    // NOTIFICATIONS COLLECTION
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      allow create, delete: if isAdmin();
+    }
+
+    // APP SETTINGS COLLECTION
+    match /appSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

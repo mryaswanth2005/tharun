@@ -1,0 +1,107 @@
+{
+  "name": "Califnco Bonus WAHA WhatsApp Status Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "w1",
+      "name": "Daily 9:30 AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "1CalifncoProductQueueSheetId",
+        "range": "Queue!A2:O53",
+        "options": {
+          "filter": "status=published"
+        }
+      },
+      "id": "w2",
+      "name": "Fetch Latest Daily Featured Product",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3008/api/default/status/image",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "caption",
+              "value": "💧 Califnco PureWater Daily Feature!\n\n{{ $json.name }}\nPure, mineral-rich drinking water with 8-stage purification.\n\nPrice: ₹{{ $json.customer_price }}\nOrder directly or book installation on our mobile app: https://califnco.com"
+            },
+            {
+              "name": "file",
+              "value": "={{ { \"mimetype\": \"image/jpeg\", \"url\": $json.image_url, \"filename\": \"product.jpg\" } }}"
+            }
+          ]
+        }
+      },
+      "id": "w3",
+      "name": "WAHA Docker - Post WhatsApp Status Story",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "text": "=✅ WhatsApp Status story updated successfully for {{ $node['Fetch Latest Daily Featured Product'].json.name }} via WAHA Docker session."
+      },
+      "id": "w4",
+      "name": "Log WhatsApp Status Update",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [760, 300]
+    }
+  ],
+  "connections": {
+    "Daily 9:30 AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Latest Daily Featured Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Latest Daily Featured Product": {
+      "main": [
+        [
+          {
+            "node": "WAHA Docker - Post WhatsApp Status Story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WAHA Docker - Post WhatsApp Status Story": {
+      "main": [
+        [
+          {
+            "node": "Log WhatsApp Status Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

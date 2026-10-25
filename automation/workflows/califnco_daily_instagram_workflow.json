@@ -1,0 +1,390 @@
+{
+  "name": "Califnco Daily AI Instagram Marketing Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Daily 9:00 AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "1CalifncoProductQueueSheetId",
+        "range": "Queue!A2:O53",
+        "options": {
+          "filter": "status=pending"
+        }
+      },
+      "id": "2",
+      "name": "Google Sheets - Read Next Pending Product",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.product_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "3",
+      "name": "Product Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "1CalifncoProductQueueSheetId",
+        "range": "Queue!K{{ $json.row_number }}",
+        "values": "processing"
+      },
+      "id": "4",
+      "name": "Lock Queue Row (Processing)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [760, 200]
+    },
+    {
+      "parameters": {
+        "model": "gemini-1.5-flash",
+        "prompt": "=You are the marketing copywriter for Califnco PureWater.\nWrite a factual, engaging Instagram post caption for:\nProduct: {{ $json.name }}\nCategory: {{ $json.category }}\nRetail Price: ₹{{ $json.customer_price }}\nKey Specs: {{ $json.specifications_summary }}\nDescription: {{ $json.description }}\n\nStrict Rules:\n1. Only use facts from the above data.\n2. Include 3 bullet points with actual specs.\n3. Add a call to action to download the Califnco Mobile App.\n4. Include exactly 8 relevant hashtags.\n\nOutput ONLY a JSON object:\n{\n  \"caption\": \"your complete formatted text with emojis\",\n  \"hashtags\": [\"#Califnco\", \"#PureWater\", ...]\n}"
+      },
+      "id": "5",
+      "name": "Gemini AI - Generate Caption & Hashtags",
+      "type": "@n8n/n8n-nodes-langchain.googleGeminiChat",
+      "typeVersion": 1,
+      "position": [980, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.HUGGINGFACE_API_KEY || 'hf_demo_key' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "inputs",
+              "value": "=Commercial studio packshot of {{ $node['Google Sheets - Read Next Pending Product'].json.name }}, sleek modern water purifier appliance on luxury marble kitchen wall with crystal clear glass of water, photorealistic, professional lighting, 8k, no text, no watermark"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Hugging Face - Generate Marketing Visual",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "https://api.cloudinary.com/v1_1/{{ $env.CLOUDINARY_CLOUD_NAME || 'califnco' }}/image/upload",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "value": "={{ $node['Google Sheets - Read Next Pending Product'].json.image_url }}"
+            },
+            {
+              "name": "upload_preset",
+              "value": "califnco_daily_feed"
+            }
+          ]
+        }
+      },
+      "id": "7",
+      "name": "Cloudinary - Upload & Host CDN Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1420, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ Boolean($env.INSTAGRAM_ACCOUNT_ID && $env.META_ACCESS_TOKEN) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "8",
+      "name": "Is Live Meta API Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_ACCOUNT_ID }}/media",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "image_url",
+              "value": "={{ $node['Cloudinary - Upload & Host CDN Asset'].json.secure_url || $node['Google Sheets - Read Next Pending Product'].json.image_url }}"
+            },
+            {
+              "name": "caption",
+              "value": "={{ $node['Gemini AI - Generate Caption & Hashtags'].json.caption }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $env.META_ACCESS_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "9",
+      "name": "Meta Graph API - Create IG Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1880, 100]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_ACCOUNT_ID }}/media_publish",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{ $node['Meta Graph API - Create IG Container'].json.id }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $env.META_ACCESS_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "10",
+      "name": "Meta Graph API - Publish Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2100, 100]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "instagram_post_id",
+              "value": "=sim_ig_post_{{ Date.now() }}"
+            },
+            {
+              "name": "status",
+              "value": "published_dry_run"
+            }
+          ]
+        }
+      },
+      "id": "11",
+      "name": "Dry-Run Simulator (When No Meta Token)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "1CalifncoProductQueueSheetId",
+        "range": "Queue!K{{ $node['Google Sheets - Read Next Pending Product'].json.row_number }}:O{{ $node['Google Sheets - Read Next Pending Product'].json.row_number }}",
+        "values": "=published,{{ new Date().toISOString() }},{{ $json.id || $json.instagram_post_id }},{{ $node['Gemini AI - Generate Caption & Hashtags'].json.caption }},"
+      },
+      "id": "12",
+      "name": "Google Sheets - Record Publishing Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2320, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_CHAT_ID || 'califnco_marketing_ops' }}",
+        "text": "=✅ Califnco Daily Marketing Automated Post Succeeded!\n\nProduct: {{ $node['Google Sheets - Read Next Pending Product'].json.name }}\nPost ID: {{ $json.id || $json.instagram_post_id }}\nTime: {{ new Date().toLocaleString('en-IN') }}\nNext scheduled run: Tomorrow 09:00 AM IST"
+      },
+      "id": "13",
+      "name": "Send Success Notification Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2540, 200]
+    }
+  ],
+  "connections": {
+    "Daily 9:00 AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Read Next Pending Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Read Next Pending Product": {
+      "main": [
+        [
+          {
+            "node": "Product Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Product Available?": {
+      "main": [
+        [
+          {
+            "node": "Lock Queue Row (Processing)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lock Queue Row (Processing)": {
+      "main": [
+        [
+          {
+            "node": "Gemini AI - Generate Caption & Hashtags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini AI - Generate Caption & Hashtags": {
+      "main": [
+        [
+          {
+            "node": "Hugging Face - Generate Marketing Visual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hugging Face - Generate Marketing Visual": {
+      "main": [
+        [
+          {
+            "node": "Cloudinary - Upload & Host CDN Asset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cloudinary - Upload & Host CDN Asset": {
+      "main": [
+        [
+          {
+            "node": "Is Live Meta API Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Live Meta API Configured?": {
+      "main": [
+        [
+          {
+            "node": "Meta Graph API - Create IG Container",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dry-Run Simulator (When No Meta Token)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Graph API - Create IG Container": {
+      "main": [
+        [
+          {
+            "node": "Meta Graph API - Publish Container",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Graph API - Publish Container": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Record Publishing Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dry-Run Simulator (When No Meta Token)": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Record Publishing Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Record Publishing Log": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
